@@ -1,0 +1,20 @@
+#!/bin/bash
+set -e
+echo "This script outlines steps to create an Android APK using Capacitor."
+echo "Run locally on your machine (not in this environment)."
+
+echo "1) Install Capacitor"
+echo "   npm install @capacitor/core @capacitor/cli --save"
+echo "2) Build web app"
+echo "   npm run build"
+echo "3) Initialize Capacitor"
+echo "   npx cap init escape-puzzle com.example.escapepuzzle --web-dir=dist"
+echo "4) Add Android"
+echo "   npx cap add android"
+echo "5) Open Android Studio"
+echo "   npx cap open android"
+echo "6) In Android Studio: build APK (Build > Build Bundle(s) / APK(s) > Build APK(s))"
+echo ""
+echo "Notes:"
+echo "- You need Android SDK, Java JDK, and Android Studio installed."
+echo "- Configure applicationId, signing configs, and versioning inside Android Studio before release build."
