@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Escape Maze — Arrow Puzzle</title>
   <style>
-    /* Minimal styles to mimic the polished look */
     :root{
       --bg:#f8fafc; --card:#ffffff; --muted:#64748b; --accent:#ef4444; --navy:#0b1324;
     }
@@ -20,8 +19,8 @@
     .hearts{display:flex;gap:6px;align-items:center}
     .heart{width:20px;height:20px;border-radius:6px;background:#f1f5f9;display:inline-flex;align-items:center;justify-content:center;font-size:12px}
     .heart.full{background:var(--accent);color:#fff}
-    /* board: square responsive */
-    .board-wrap{position:relative;width:100%;padding-top:100%;overflow:hidden}
+    /* FIX: board-wrap must have explicit height to render square board reliably */
+    .board-wrap{position:relative;width:100%; /* square responsive */ height: min(80vw, 520px); max-height: 70vh; overflow:hidden}
     .grid{position:absolute;inset:0;display:grid;border-radius:8px;overflow:hidden;border:1px solid rgba(2,6,23,0.04)}
     .cell{display:flex;align-items:center;justify-content:center;border:0.5px solid rgba(2,6,23,0.03);user-select:none}
     .cell.cleared{background:linear-gradient(180deg,#fff,#fbfbfb)}
@@ -32,12 +31,11 @@
     .levels-card{background:#fff;border-radius:12px;padding:12px;width:100%;max-width:420px;max-height:60vh;overflow:auto}
     .level-btn{padding:8px;border-radius:8px;border:0;background:#f1f5f9;margin:6px;min-width:44px}
     @media (min-width:720px){ .container{padding:28px} }
-    /* small arrow SVG size */
     svg.arrow-svg{width:22px;height:22px}
     .muted{color:var(--muted)}
     .title{font-size:20px;font-weight:700}
   </style>
-  <!-- Load React + ReactDOM + Babel (for in-browser JSX) -->
+  <!-- React + ReactDOM + Babel (in-browser JSX) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -47,9 +45,8 @@
 
   <script type="text/babel">
   const { useState, useEffect, useRef, useMemo } = React;
-
   const LEVEL_COUNT = 500;
-  const STORAGE_KEY = 'escape_maze_singlefile_v1';
+  const STORAGE_KEY = 'escape_maze_singlefile_v2';
   const DIRS = ['up','right','down','left'];
   const DIR_VECTORS = { up:[-1,0], right:[0,1], down:[1,0], left:[0,-1] };
 
@@ -73,7 +70,6 @@
         col = Math.max(0, Math.min(size-1, col+dc));
       }
     }
-    // small loops
     for(let k=0;k<Math.max(2,Math.floor(size/3));k++){
       const r0 = rand(1,size-2), c0 = rand(1,size-2);
       grid[r0][c0].dir='right';
@@ -86,7 +82,6 @@
 
   function loadProgress(){ try{ const r = localStorage.getItem(STORAGE_KEY); return r?JSON.parse(r):null }catch(e){return null} }
   function saveProgress(data){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)) }catch(e){} }
-
   function IconArrow({dir}) {
     const rotate = { up: 'rotate(0deg)', right: 'rotate(90deg)', down: 'rotate(180deg)', left: 'rotate(270deg)' }[dir];
     return (
@@ -174,10 +169,11 @@
             </div>
           </header>
 
-          <div className="board-wrap card" style={{padding:12}}>
+          <div className="board-wrap" style={{padding:12}}>
             <div ref={containerRef} onMouseDown={handlePointerDown} onMouseMove={handlePointerMove} onMouseUp={handlePointerUp}
                  onTouchStart={handlePointerDown} onTouchMove={handlePointerMove} onTouchEnd={handlePointerUp}
                  className="grid" style={{gridTemplateColumns:`repeat(${size},1fr)`, gridTemplateRows:`repeat(${size},1fr)`}}>
+                 >
               {grid.map((row,r)=> row.map((cell,c)=>{
                 const isInPath = path.some(([pr,pc])=> pr===r && pc===c);
                 return (
@@ -202,8 +198,8 @@
         </div>
 
         {showLevels && (
-          <div className="levels-modal">
-            <div className="levels-card">
+          <div className="levels-modal" onClick={()=>setShowLevels(false)}>
+            <div className="levels-card" onClick={(e)=>e.stopPropagation()}>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}><b>Levels</b><button className="btn" onClick={()=>setShowLevels(false)}>Close</button></div>
               <div style={{display:'flex',flexWrap:'wrap',marginTop:8}}>
                 {Array.from({length:60}).map((_,i)=>(
@@ -217,8 +213,8 @@
     )
   }
 
+  // Render app
   ReactDOM.createRoot(document.getElementById('root')).render(<EscapeMazeApp />);
-
   </script>
 </body>
 </html>
