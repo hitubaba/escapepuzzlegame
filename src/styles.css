@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --accent: #ef4444;
+  --navy: #0b1324;
+}
+
+html, body, #root { height: 100%; }
+body { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; background: #fafafa; }
+.card { background: white; border-radius: 16px; box-shadow: 0 6px 18px rgba(11,19,36,0.06); }
