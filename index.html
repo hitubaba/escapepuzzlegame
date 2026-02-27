@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Escape Maze — Arrow Puzzle (touch-release)</title>
+  <style>
+    :root{
+      --bg:#f8fafc; --card:#ffffff; --muted:#64748b; --accent:#ef4444; --navy:#0b1324;
+      --cell-border: rgba(2,6,23,0.04);
+      --cell-gap: 1px;
+    }
+    html,body,#root{height:100%}
+    body{margin:0;font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial;background:var(--bg);color:var(--navy)}
+    .container{max-width:920px;margin:18px auto;padding:16px}
+    .card{background:var(--card);border-radius:16px;padding:12px;box-shadow:0 8px 24px rgba(11,19,36,0.06)}
+    header.app-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    .btn{background:#eef2ff;border-radius:10px;padding:8px 12px;border:0;cursor:pointer;font-weight:600}
+    .btn.primary{background:var(--navy);color:#fff}
+    .hearts{display:flex;gap:6px;align-items:center}
+    .heart{width:20px;height:20px;border-radius:6px;background:#f1f5f9;display:inline-flex;align-items:center;justify-content:center;font-size:12px}
+    .heart.full{background:var(--accent);color:#fff}
+    .board-wrap{position:relative;width:100%; height: min(78vw, 640px); max-height: 74vh; overflow:hidden; border-radius:10px}
+    .grid{position:absolute;inset:0;display:grid;border-radius:10px;overflow:hidden;border:1px solid var(--cell-border); background:transparent}
+    .cell{display:flex;align-items:center;justify-content:center;border-right:var(--cell-gap) solid rgba(2,6,23,0.03);border-bottom:var(--cell-gap) solid rgba(2,6,23,0.03);user-select:none; background: #fff; transition: background .12s, transform .12s}
+    .cell.cleared{background:linear-gradient(180deg,#fff,#fbfbfb); opacity:0.6}
+    .cell.inpath{background: rgba(239,68,68,0.07)}
+    .cell.touch-feedback{transform:scale(0.96)}
+    .footer{margin-top:12px;color:var(--muted);font-size:13px}
+    .levels-modal{position:fixed;inset:0;background:rgba(2,6,23,0.45);display:flex;align-items:flex-end;justify-content:center;padding:18px}
+    .levels-card{background:#fff;border-radius:12px;padding:12px;width:100%;max-width:420px;max-height:60vh;overflow:auto}
+    .level-btn{padding:8px;border-radius:8px;border:0;background:#f1f5f9;margin:6px;min-width:44px}
+    @media (min-width:720px){ .container{padding:28px} }
+    svg.arrow-svg{width:26px;height:26px}
+    svg.arrow-svg path{stroke:#071126; stroke-width:2.6; stroke-linecap:round; stroke-linejoin:round}
+    .muted{color:var(--muted)}
+    .title{font-size:22px;font-weight:800;line-height:1}
+    .notice{margin-top:10px;padding:8px;border-radius:8px;background:#fff7ed;color:#7a4100}
+    .confetti{position:fixed;inset:0;pointer-events:none}
+    .centered-msg{position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);font-size:34px;color:var(--navy);font-weight:700}
+  </style>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+  const { useState, useEffect, useRef, useMemo } = React;
+
+  const LEVEL_COUNT = 500;
+  const STORAGE_KEY = 'escape_maze_touch_v1';
+  const DIRS = ['up','right','down','left'];
+  const DIR_VECTORS = { up:[-1,0], right:[0,1], down:[1,0], left:[0,-1] };
+
+  function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min }
+
+  function generateLevelGrid(levelIndex){
+    const difficulty = Math.min(1 + Math.floor(levelIndex/40), 11);
+    const baseSize = 7;
+    const size = baseSize + Math.floor(difficulty/2);
+    const grid = Array.from({length:size}, ()=>Array.from({length:size}, ()=>({ dir: DIRS[rand(0,3)], cleared:false })));
+    const corridors = 6 + difficulty;
+    for(let c=0;c<corridors;c++){
+      let r = rand(0,size-1), col = rand(0,size-1);
+      const len = rand(Math.max(3,Math.floor(size/2)), Math.max(size*2,6));
+      let lastDir = DIRS[rand(0,3)];
+      for(let i=0;i<len;i++){
+        grid[r][col].dir = lastDir;
+        if (Math.random() < 0.3) lastDir = DIRS[rand(0,3)];
+        const [dr,dc] = DIR_VECTORS[lastDir];
+        r = Math.max(0, Math.min(size-1, r+dr));
+        col = Math.max(0, Math.min(size-1, col+dc));
+      }
+    }
+    for(let k=0;k<Math.max(2,Math.floor(size/3));k++){
+      const r0 = rand(1,size-2), c0 = rand(1,size-2);
+      grid[r0][c0].dir='right';
+      grid[r0][c0+1].dir='down';
+      grid[r0+1][c0+1].dir='left';
+      grid[r0+1][c0].dir='up';
+    }
+    return grid;
+  }
+
+  function loadProgress(){ try{ const r = localStorage.getItem(STORAGE_KEY); return r?JSON.parse(r):null }catch(e){return null} }
+  function saveProgress(data){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)) }catch(e){} }
+
+  function IconArrow({dir}) {
+    const rotate = { up: 'rotate(0deg)', right: 'rotate(90deg)', down: 'rotate(180deg)', left: 'rotate(270deg)' }[dir];
+    return (
+      <svg className="arrow-svg arrow" viewBox="0 0 24 24" style={{transform:rotate}}>
+        <path d="M12 2 L12 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" />
+        <path d="M6 10 L12 2 L18 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      </svg>
+    )
+  }
+
+  function EscapeMazeApp(){
+    const saved = useMemo(()=>loadProgress(), []);
+    const [levelIndex, setLevelIndex] = useState(saved?.levelIndex ?? 0);
+    const [unlocked, setUnlocked] = useState(saved?.unlocked ?? 0);
+    const [lives, setLives] = useState(saved?.lives ?? 3);
+    const [grid, setGrid] = useState(()=>generateLevelGrid(levelIndex));
+    const [path, setPath] = useState([]);
+    const [msg, setMsg] = useState('');
+    const [showConfetti, setShowConfetti] = useState(false);
+    const [showLevels, setShowLevels] = useState(false);
+    const containerRef = useRef(null);
+    const touchTimer = useRef(null);
+
+    useEffect(()=> saveProgress({levelIndex,unlocked,lives}), [levelIndex,unlocked,lives]);
+    useEffect(()=> { setGrid(generateLevelGrid(levelIndex)); setPath([]); setMsg(''); setShowConfetti(false); }, [levelIndex]);
+
+    // audio
+    function playTone(freq=440, time=0.08) {
+      try {
+        const ctx = (window._audioCtx ||= new (window.AudioContext || window.webkitAudioContext)());
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = freq;
+        g.gain.value = 0.0001;
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start();
+        g.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + time);
+        o.stop(ctx.currentTime + time + 0.02);
+      } catch(e){}
+    }
+    function playCorrect(){ playTone(880, 0.08); }
+    function playWrong(){ playTone(220, 0.14); }
+
+    // detect all cleared
+    useEffect(() => {
+      const ok = grid.length>0 && grid.every(row => row.every(cell => cell.cleared));
+      if (ok) {
+        setMsg('Nice!');
+        setShowConfetti(true);
+        playTone(1200,0.12);
+        setUnlocked(u => Math.max(u, levelIndex+1));
+        setTimeout(()=> {
+          // small confetti time then go next
+          setShowConfetti(false);
+          setLevelIndex(i => Math.min(LEVEL_COUNT-1, i+1));
+        }, 900);
+      }
+    }, [grid]);
+
+    const size = grid.length;
+    function inBounds(r,c){ return r>=0 && r<size && c>=0 && c<size }
+
+    // --- NEW: immediate touch-to-clear behavior ---
+    // When user taps a cell it clears immediately (if not already cleared).
+    // Drag behavior still clears as you drag.
+    function touchTapCell(r,c){
+      if (!inBounds(r,c)) return;
+      if (grid[r][c].cleared) return;
+      // immediate clear
+      setGrid(g => {
+        const ng = g.map(row => row.map(cel => ({...cel})));
+        ng[r][c].cleared = true;
+        return ng;
+      });
+      playCorrect();
+      setMsg('');
+    }
+
+    // drag/tap helper
+    function tapCell(r,c){
+      // keep compatibility: tapping will also call touchTapCell (flexible)
+      touchTapCell(r,c);
+    }
+
+    function pointerToCell(e){
+      const rect = containerRef.current?.getBoundingClientRect(); if(!rect) return null;
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      const x = clientX - rect.left, y = clientY - rect.top;
+      const cw = rect.width/size, ch = rect.height/size;
+      const c = Math.floor(x/cw), r = Math.floor(y/ch);
+      if (!inBounds(r,c)) return null; return [r,c];
+    }
+
+    function handlePointerDown(e){
+      e.preventDefault();
+      const cell = pointerToCell(e);
+      if(!cell) return;
+      setPath([cell]);
+      // small touch-feedback class toggle via timer
+      if (touchTimer.current) clearTimeout(touchTimer.current);
+      const [r,c] = cell;
+      const el = e.target.closest ? e.target.closest('.cell') : null;
+      if (el) el.classList.add('touch-feedback');
+      touchTimer.current = setTimeout(()=> {
+        if (el) el.classList.remove('touch-feedback');
+      }, 130);
+    }
+
+    function handlePointerMove(e){
+      if(path.length===0) return;
+      const cell = pointerToCell(e); if(!cell) return;
+      const [r,c] = cell; const last = path[path.length-1];
+      if(last[0]===r && last[1]===c) return;
+      // immediate clear as we drag over
+      if (!grid[r][c].cleared) {
+        setGrid(g => {
+          const ng = g.map(row => row.map(cel => ({...cel})));
+          ng[r][c].cleared = true;
+          return ng;
+        });
+        playCorrect();
+      }
+      setPath(p => [...p, [r,c]]);
+    }
+
+    function handlePointerUp(e){
+      setPath([]);
+    }
+
+    function undo(){ setPath(p=>p.slice(0,-1)) }
+    function resetLevel(){ setGrid(generateLevelGrid(levelIndex)); setPath([]); setLives(3); setMsg(''); }
+
+    return (
+      <div className="container">
+        <div className="card">
+          <header className="app-head">
+            <div style={{display:'flex',alignItems:'center',gap:12}}>
+              <button className="btn" onClick={()=> setLevelIndex(i=>Math.max(0,i-1))}>◀</button>
+              <button className="btn" onClick={()=> { setGrid(generateLevelGrid(levelIndex)); setPath([]); setMsg('') }}>↺</button>
+              <div style={{marginLeft:6}}>
+                <div className="muted">Level {levelIndex+1}</div>
+                <div className="title">Escape Maze</div>
+              </div>
+            </div>
+
+            <div style={{display:'flex',alignItems:'center',gap:12}}>
+              <div className="hearts">
+                {[...Array(3)].map((_,i)=>(<div key={i} className={'heart '+(i<lives?'full':'')}></div>))}
+              </div>
+              <div className="muted">Unlocked {unlocked+1}</div>
+            </div>
+          </header>
+
+          <div className="board-wrap" style={{padding:10}}>
+            <div ref={containerRef} onMouseDown={handlePointerDown} onMouseMove={handlePointerMove} onMouseUp={handlePointerUp}
+                 onTouchStart={handlePointerDown} onTouchMove={handlePointerMove} onTouchEnd={handlePointerUp}
+                 className="grid" style={{gridTemplateColumns:`repeat(${size},1fr)`, gridTemplateRows:`repeat(${size},1fr)`}}>
+
+              {grid.map((row,r)=> row.map((cell,c)=> {
+                const isInPath = path.some(([pr,pc])=> pr===r && pc===c);
+                return (
+                  <div key={r+'-'+c}
+                       onClick={()=>tapCell(r,c)}
+                       className={'cell '+(cell.cleared?'cleared':'')+(isInPath?' inpath':'')}
+                       role="button" aria-label={`cell-${r}-${c}`}>
+                    {!cell.cleared && <IconArrow dir={cell.dir} />}
+                  </div>
+                )
+              }))}
+
+            </div>
+          </div>
+
+          <div style={{marginTop:12,display:'flex',gap:8,alignItems:'center'}}>
+            <button className="btn" onClick={undo}>Undo</button>
+            <button className="btn" onClick={resetLevel}>Reset</button>
+            <button className="btn" onClick={()=> setLevelIndex(i=>Math.max(0,i-1))}>Prev</button>
+
+            <button
+              className="btn primary"
+              onClick={()=>{
+                // only allow manual next if everything cleared (fallback)
+                const ok = grid.length>0 && grid.every(row => row.every(cell=>cell.cleared));
+                if (ok) setLevelIndex(i=>Math.min(LEVEL_COUNT-1,i+1));
+                else { setMsg('Puzzle complete karke hi aage jao'); setTimeout(()=>setMsg(''),1100); }
+              }}
+              style={{marginLeft:'auto'}}
+            >
+              Next
+            </button>
+          </div>
+
+          {msg && <div className="notice">{msg}</div>}
+
+          <div className="footer">Touch any arrow to release it — customize generator in <code>generateLevelGrid()</code></div>
+        </div>
+
+        {showConfetti && (
+          <div className="confetti">
+            <div className="centered-msg">Nice!</div>
+            {/* Simple confetti pieces using CSS randomised approach */}
+            <canvas id="confetti-canvas" style={{width:'100%',height:'100%'}}></canvas>
+          </div>
+        )}
+
+        {showLevels && (
+          <div className="levels-modal" onClick={()=>setShowLevels(false)}>
+            <div className="levels-card" onClick={(e)=>e.stopPropagation()}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}><b>Levels</b><button className="btn" onClick={()=>setShowLevels(false)}>Close</button></div>
+              <div style={{display:'flex',flexWrap:'wrap',marginTop:8}}>
+                {Array.from({length:60}).map((_,i)=>(
+                  <button key={i} className="level-btn" onClick={()=>{ setLevelIndex(i); setShowLevels(false) }}>{i+1}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // minimal confetti script for canvas
+  function runConfettiOnce(){
+    const canvas = document.getElementById('confetti-canvas');
+    if(!canvas) return;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const ctx = canvas.getContext('2d');
+    const pieces = [];
+    for(let i=0;i<120;i++){
+      pieces.push({
+        x: Math.random()*canvas.width,
+        y: Math.random()*canvas.height - canvas.height,
+        w: 6+Math.random()*10,
+        h: 4+Math.random()*6,
+        vx: -1 + Math.random()*2,
+        vy: 2 + Math.random()*4,
+        color: ['#0b4fd6','#7aa2ff','#dfe6ff','#1f3344'][Math.floor(Math.random()*4)],
+        rot: Math.random()*360
+      });
+    }
+    let t=0;
+    function frame(){
+      t++;
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      for(const p of pieces){
+        p.x += p.vx;
+        p.y += p.vy;
+        p.rot += 6;
+        ctx.save();
+        ctx.translate(p.x,p.y);
+        ctx.rotate(p.rot*Math.PI/180);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+        ctx.restore();
+      }
+      if(t<120) requestAnimationFrame(frame);
+      else ctx.clearRect(0,0,canvas.width,canvas.height);
+    }
+    frame();
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<EscapeMazeApp />);
+
+  // hook confetti runner when "Nice!" appears by observing DOM (simple)
+  const obs = new MutationObserver((mutations)=>{
+    for(const m of mutations){
+      if(m.addedNodes) for(const n of m.addedNodes){
+        if(n.classList && n.classList.contains('confetti')){
+          runConfettiOnce();
+        }
+      }
+    }
+  });
+  obs.observe(document.body, {childList:true, subtree:true});
+  </script>
+</body>
+</html>
